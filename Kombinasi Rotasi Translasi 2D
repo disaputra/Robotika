@@ -1,0 +1,32 @@
+clear all;
+clc;
+
+% Set up an array of points
+x_points = [2, 2, 0.5, -1, -1, 2];
+y_points = [-1, 2, 3,  2, -1, -1];
+points = [x_points; y_points; ones(1, length(x_points))];
+
+% Initial Conditions
+sx = 0; sy = 0; theta = -40;
+
+clf;
+for t = 0:10
+  % Compute the transformation matrix
+  transf_mat = [cosd(theta), -sind(theta), sx; ...
+                sind(theta),  cosd(theta), sy; ...
+                           0,            0, 1];
+
+  % Compute the new points
+  transf_pts = transf_mat*points;
+
+  % Plot the points
+  plot(transf_pts(1,:), transf_pts(2,:), '-k' );
+  hold on;
+
+  % Update the state for the next plot
+  sx = sx + 7*cosd(theta+90);
+  sy = sy + 7*sind(theta+90);
+  theta = theta - 10;
+end
+
+axis equal; grid on;
