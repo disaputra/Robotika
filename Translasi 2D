@@ -1,0 +1,27 @@
+clear all;
+clc;
+
+% Set up an array of points
+x_points = [2, 2, 0.5, -1, -1, 2];
+y_points = [-1, 2, 3,  2, -1, -1];
+points = [x_points; y_points; ones(1, length(x_points))];
+    
+% Translation matrix
+sx = 2; sy = 3;
+trans_mat = [1, 0, sx; ...
+             0, 1, sy; ...
+             0, 0,  1];                                
+             
+% Transform the points
+for p = 1:size(points,2)
+  trans_pts(:,p) = trans_mat * points(:,p);
+end            
+
+% Plot everything
+clf;
+plot(0,0,'+k', 'DisplayName', 'Origin');
+hold on;
+plot(sx,sy,'+g', 'DisplayName', 'Translated Origin');
+plot(points(1,:), points(2,:), 'x-k', 'DisplayName', 'Original Points');
+plot(trans_pts(1,:), trans_pts(2,:), 'x-g', 'DisplayName', 'Translated Points');
+legend show; grid on; axis equal;
