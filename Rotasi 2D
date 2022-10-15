@@ -1,0 +1,25 @@
+clear all;
+clc;
+
+% Set up an array of points
+x_points = [2, 2, 0.5, -1, -1, 2];
+y_points = [-1, 2, 3,  2, -1, -1];
+points = [x_points; y_points];
+
+% Rotation matrix
+theta = 90;
+rot_mat = [cosd(theta), -sind(theta);
+           sind(theta),  cosd(theta)];
+
+% Rotate the points
+for p = 1:size(points,2)
+  rot_pts(:,p) = rot_mat * points(:,p);
+end            
+
+% Plots
+clf;
+plot(0,0,'+k', 'DisplayName', 'Origin');
+hold on; grid on;
+plot(points(1,:), points(2,:), 'x-k', 'DisplayName', 'Original Points');
+plot(rot_pts(1,:), rot_pts(2,:), 'x-r', 'DisplayName', 'Rotated Points');
+legend show; axis equal;
