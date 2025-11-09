@@ -1,0 +1,27 @@
+clear; clc; close all;
+L1 = 80; L2 = 90;
+theta1 = deg2rad(45);
+theta2 = deg2rad(30);
+
+% Posisi titik-titik
+O = [0;0];
+P1 = [L1*cos(theta1); L1*sin(theta1)];
+P2 = [L1*cos(theta1)+L2*cos(theta1+theta2); L1*sin(theta1)+L2*sin(theta1+theta2)];
+
+% Jacobian
+J = [ -L1*sin(theta1) - L2*sin(theta1+theta2), -L2*sin(theta1+theta2);
+       L1*cos(theta1) + L2*cos(theta1+theta2),  L2*cos(theta1+theta2)];
+
+disp('Jacobian:'); disp(J);
+
+% Plot robot dan arah kolom Jacobian
+figure; hold on; axis equal; grid on;
+plot([O(1) P1(1) P2(1)], [O(2) P1(2) P2(2)], 'b-o','LineWidth',2);
+xlabel('x [mm]'); ylabel('y [mm]');
+title('Visualisasi Kolom Jacobian');
+
+% Kolom Jacobian sebagai vektor arah kecepatan
+scale = 0.2;
+quiver(P2(1), P2(2), J(1,1)*scale, J(2,1)*scale, 'r','LineWidth',2);
+quiver(P2(1), P2(2), J(1,2)*scale, J(2,2)*scale, 'g','LineWidth',2);
+legend({'Lengan','Kolom 1 (joint1)','Kolom 2 (joint2)'});
