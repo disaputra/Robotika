@@ -1,0 +1,173 @@
+%% ============================================================
+%  2R ARM — ACCELERATION CONTROLLER (JOINT-SPACE / TASK-SPACE)
+%  - Model dinamik 2R (Spong style)
+%  - Inner law: acceleration -> torque (computed torque)
+% =============================================================
+
+clear; clc; close all;
+
+%% ------------ PARAMETER LINK & INERSIA (contoh realistis) ------------
+% Satuan SI pada dinamika (meter, kg, N, Nm). Konversi dari mm ke m.
+l1  = 0.080;    % 80 mm
+l2  = 0.090;    % 90 mm
+lc1 = 0.040;    % CoM link1 ~ l1/2
+lc2 = 0.045;    % CoM link2 ~ l2/2
+m1  = 0.40;     % kg
+m2  = 0.35;     % kg
+I1  = 1.0e-3;   % kg*m^2 (perkiraan)
+I2  = 8.0e-4;   % kg*m^2
+g0  = 9.81;     % m/s^2
+
+%% ------------ SIMULASI ------------
+Ts   = 0.002;          % 2 ms
+Tend = 4.0;            % 4 s
+N    = round(Tend/Ts);
+
+% Pilih mode kontrol:
+use_task_space = false;  % false: joint-space; true: task-space
+
+% Gains
+if ~use_task_space
+    Kp = diag([120, 80]);
+    Kd = diag([ 25, 18]);
+else
+    Kx = diag([300, 300]);   % posisi kartesian
+    Dx = diag([ 30,  30]);   % kecepatan kartesian
+end
+
+% Batas torsi (opsional)
+tau_max = [2.0; 2.0];     % Nm
+
+% State awal
+q  = deg2rad([10; 20]);   % rad
+dq = [0;0];
+
+% Referensi
+% 1) Joint-space: step ke [45 deg; 30 deg]
+qref_const = deg2rad([45; 30]);
+
+% 2) Task-space: lingkaran kecil di sekitar titik target
+xref_c    = [0.12; 0.05];   % m
+r_circ    = 0.015;          % m
+w_circ    = 2*pi/2.0;       % rad/s (periode 2s)
+
+% Log
+q_log  = zeros(2,N); dq_log = zeros(2,N); ddq_log = zeros(2,N);
+tau_log= zeros(2,N);
+x_log  = zeros(2,N); dx_log = zeros(2,N);
+t_vec  = (0:N-1)*Ts;
+
+%% ------------ SIMULASI LOOP ------------
+for k = 1:N
+    t = (k-1)*Ts;
+
+    % FK: posisi & kecepatan EE
+    x  = [l1*cos(q(1)) + l2*cos(q(1)+q(2));
+          l1*sin(q(1)) + l2*sin(q(1)+q(2))];
+    J  = [ -l1*sin(q(1)) - l2*sin(q(1)+q(2)),  -l2*sin(q(1)+q(2));
+            l1*cos(q(1)) + l2*cos(q(1)+q(2)),   l2*cos(q(1)+q(2)) ];
+    dx = J*dq;
+
+    % Dinamika M, h, g
+    c2 = cos(q(2)); s2 = sin(q(2));
+    M11 = I1+I2 + m1*lc1^2 + m2*(l1^2 + lc2^2 + 2*l1*lc2*c2);
+    M12 = I2 + m2*(lc2^2 + l1*lc2*c2);
+    M22 = I2 + m2*(lc2^2);
+    M   = [M11 M12; M12 M22];
+
+    h1 = -m2*l1*lc2*s2*(2*dq(1)*dq(2) + dq(2)^2);
+    h2 =  m2*l1*lc2*s2*(dq(1)^2);
+    h  = [h1; h2];
+
+    g1 = (m1*lc1 + m2*l1)*g0*cos(q(1)) + m2*lc2*g0*cos(q(1)+q(2));
+    g2 = m2*lc2*g0*cos(q(1)+q(2));
+    gv = [g1; g2];
+
+    % ====== ACCELERATION COMMAND ======
+    if ~use_task_space
+        % ---- Joint-space tracking ----
+        qref  = qref_const;
+        dqref = [0;0];
+        ddqref= [0;0];
+        ddq_des = ddqref + Kd*(dqref - dq) + Kp*(qref - q);
+    else
+        % ---- Task-space tracking (lingkaran) ----
+        xref  = xref_c + r_circ*[cos(w_circ*t); sin(w_circ*t)];
+        dxref = r_circ*w_circ*[-sin(w_circ*t);  cos(w_circ*t)];
+        ddxref= r_circ*w_circ^2*[-cos(w_circ*t); -sin(w_circ*t)];
+
+        % Hukum percepatan kartesian
+        xdd_des = ddxref + Dx*(dxref - dx) + Kx*(xref - x);
+
+        % \dot{J} * dq (untuk 2R dapat dihitung eksplisit)
+        % Turunan J * dq (versi ringkas langsung evaluasi numerik):
+        % d/dt[sin(q1)] = cos(q1)*dq1, d/dt[sin(q1+q2)] = cos(q1+q2)*(dq1+dq2), dst.
+        Jdot_dq = [ -l1*cos(q(1))*dq(1) - l2*cos(q(1)+q(2))*(dq(1)+dq(2));
+                    -l1*sin(q(1))*dq(1) - l2*sin(q(1)+q(2))*(dq(1)+dq(2)) ] .* [1;1]; % per komponen
+        % Koreksi: di 2D, Jdot*dq dapat dihitung lebih tepat per baris:
+        Jdotdq1 = -l1*cos(q(1))*dq(1) - l2*cos(q(1)+q(2))*(dq(1)+dq(2));
+        Jdotdq2 =  l1*sin(q(1))*dq(1) + l2*sin(q(1)+q(2))*(dq(1)+dq(2));
+        Jdot_dq = [Jdotdq1; Jdotdq2];
+
+        % Pseudo-inverse (2x2 -> inverse bila nonsingular)
+        if abs(det(J)) > 1e-6
+            Jpinv = inv(J);
+        else
+            % DLS jika hampir singular
+            lambda = 1e-3;
+            Jpinv = J'/(J*J' + lambda^2*eye(2));
+        end
+        ddq_des = Jpinv*(xdd_des - Jdot_dq);
+    end
+
+    % ====== TORQUE COMMAND (inverse dynamics) ======
+    tau = M*ddq_des + h + gv;
+
+    % Saturasi torsi (opsional)
+    tau = max(min(tau, tau_max), -tau_max);
+
+    % ====== UPDATE KINEMATIKA via integrasi EULER ======
+    ddq = M \ (tau - h - gv);
+    dq  = dq + ddq*Ts;
+    q   = q  + dq*Ts;
+
+    % Log
+    q_log(:,k)   = q;
+    dq_log(:,k)  = dq;
+    ddq_log(:,k) = ddq;
+    tau_log(:,k) = tau;
+    x_log(:,k)   = x;
+    dx_log(:,k)  = dx;
+end
+
+%% ------------ PLOT HASIL ------------
+figure('Color','w'); 
+subplot(2,2,1); hold on; grid on;
+plot(t_vec, rad2deg(q_log(1,:)), 'LineWidth',1.2);
+plot(t_vec, rad2deg(q_log(2,:)), 'LineWidth',1.2);
+xlabel('t [s]'); ylabel('q [deg]'); title('Sudut Sendi');
+legend('q1','q2');
+
+subplot(2,2,2); hold on; grid on;
+plot(t_vec, tau_log(1,:), 'LineWidth',1.2);
+plot(t_vec, tau_log(2,:), 'LineWidth',1.2);
+xlabel('t [s]'); ylabel('\tau [Nm]'); title('Torsi');
+legend('\tau_1','\tau_2');
+
+subplot(2,2,[3 4]); hold on; grid on; axis equal;
+plot(x_log(1,:), x_log(2,:), 'b','LineWidth',1.2);
+if ~use_task_space
+    % target joint-space -> titik akhir teoritis (FK(qref_const))
+    q1r = qref_const(1); q2r = qref_const(2);
+    xref_final = [l1*cos(q1r)+l2*cos(q1r+q2r);
+                  l1*sin(q1r)+l2*sin(q1r+q2r)];
+    plot(xref_final(1), xref_final(2), 'rp','MarkerFaceColor','r');
+else
+    % task-space: gambar lingkaran referensi
+    th = linspace(0,2*pi,250);
+    xc = xref_c(1) + r_circ*cos(th);
+    yc = xref_c(2) + r_circ*sin(th);
+    plot(xc,yc,'r--','LineWidth',1.0);
+end
+xlabel('x [m]'); ylabel('y [m]');
+title('Jejak End-Effector');
