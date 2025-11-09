@@ -1,0 +1,43 @@
+clear; clc; close all;
+
+% Pose & link
+L1=80; L2=90; th1=deg2rad(45); th2=deg2rad(30); tau_max=200; % N*mm
+
+% Jacobian
+J=[-L1*sin(th1)-L2*sin(th1+th2), -L2*sin(th1+th2);
+    L1*cos(th1)+L2*cos(th1+th2),  L2*cos(th1+th2)];
+
+% Eigendecomposition of JJ^T
+A = J*J.';                        % 2x2
+[V,D] = eig(A);                   % A = V*D*V'
+lam = diag(D);                    % eigenvalues
+a_vel = sqrt(lam);                % velocity ellipse semi-axes
+a_for = tau_max./a_vel;           % force ellipse semi-axes (N)
+
+% Parametrik ellipse: p = V * diag(axes) * [cos t; sin t]
+t = linspace(0,2*pi,400);
+E_vel = V * (diag(a_vel) * [cos(t); sin(t)]);   % (vx, vy)
+E_for = V * (diag(a_for) * [cos(t); sin(t)]);   % (Fx, Fy)
+
+figure('Color','w'); 
+subplot(1,2,1); hold on; grid on; axis equal;
+plot(E_vel(0+1,:), E_vel(1+1,:), 'b','LineWidth',1.8);
+% sumbu utama velocity
+plot([0 V(1,1)*a_vel(1)], [0 V(2,1)*a_vel(1)], 'k--');
+plot([0 V(1,2)*a_vel(2)], [0 V(2,2)*a_vel(2)], 'k--');
+xlabel('v_x [mm/s per ||d\theta||=1]'); ylabel('v_y'); 
+title('Velocity Ellipsoid');
+
+subplot(1,2,2); hold on; grid on; axis equal;
+plot(E_for(0+1,:), E_for(1+1,:), 'r','LineWidth',1.8);
+% sumbu utama force
+plot([0 V(1,1)*a_for(1)], [0 V(2,1)*a_for(1)], 'k--');
+plot([0 V(1,2)*a_for(2)], [0 V(2,2)*a_for(2)], 'k--');
+xlabel('F_x [N]'); ylabel('F_y [N]'); 
+title(sprintf('Force Ellipsoid (||\\tau|| \\le %.1f Nmm)', tau_max));
+
+% Cetak angka penting
+w = abs(det(J));
+fprintf('det(J)=%.2f, w=|det(J)|=%.2f\n', det(J), w);
+fprintf('Velocity axes:  %.2f, %.2f (mm/s per ||dtheta||=1)\n', a_vel(1), a_vel(2));
+fprintf('Force axes:     %.2f, %.2f (N) untuk tau_max=%.1f Nmm\n', a_for(1), a_for(2), tau_max);
