@@ -1,0 +1,103 @@
+%% ============================================================
+%  JACOBIAN APPLICATIONS DEMO — 2-LINK PLANAR MANIPULATOR
+%  Tanpa yline, tanpa function (kompatibel MATLAB versi lama)
+%  ============================================================
+
+clear; clc; close all;
+
+%% === Parameter lengan ===
+L1 = 80;   % mm
+L2 = 90;   % mm
+th1 = deg2rad(45);
+th2 = deg2rad(30);
+
+%% === Jacobian ===
+J = [ -L1*sin(th1)-L2*sin(th1+th2), -L2*sin(th1+th2);
+       L1*cos(th1)+L2*cos(th1+th2),  L2*cos(th1+th2)];
+
+disp('Jacobian [mm/rad]:');
+disp(J);
+fprintf('Determinant = %.3f (singular jika ~0)\n', det(J));
+
+%% === (1) Analisis kecepatan =====================================
+v_cart = [10; 0];                 % mm/s → gerak sepanjang sumbu x
+dq = J\v_cart;                    % rad/s
+fprintf('\n(1) Kecepatan sendi untuk v=[10;0] mm/s:\n');
+fprintf('dtheta1=%.4f rad/s, dtheta2=%.4f rad/s\n', dq(1), dq(2));
+
+% Validasi: kecepatan balik
+v_check = J*dq;
+fprintf('Hasil rekonstruksi v=[%.3f, %.3f] mm/s\n', v_check(1), v_check(2));
+
+%% === (2) Analisis gaya/torsi =====================================
+F = [0; 5];                       % N → dorong ke atas
+tau = J.' * F;                    % N·mm
+fprintf('\n(2) Torsi sendi akibat F=[0;5] N:\n');
+fprintf('tau1=%.2f Nmm (%.3f Nm), tau2=%.2f Nmm (%.3f Nm)\n', ...
+        tau(1), tau(1)/1000, tau(2), tau(2)/1000);
+
+%% === (3) Deteksi singularitas sepanjang gerakan ==================
+theta2_range = linspace(-pi, pi, 500);
+detJ_vals = L1*L2*sin(theta2_range);
+
+figure('Color','w');
+plot(rad2deg(theta2_range), detJ_vals, 'LineWidth',1.5); hold on; grid on;
+% Ganti yline(0) dengan plot manual garis horizontal
+plot([-180 180],[0 0],'k--','LineWidth',1.2);
+xlabel('\theta_2 [deg]'); ylabel('det(J)');
+title('(3) Nilai Determinan Jacobian vs \theta_2');
+text(0,0.1*max(detJ_vals),'Singular jika det(J)=0','HorizontalAlignment','center');
+
+%% === (4) Kontrol kecepatan (Resolved-rate + Damped LS) ==========
+dt = 0.01;
+steps = 300;
+Ke = diag([2,2]);                 % gain posisi kartesian
+lambda = 5;                       % faktor damping DLS
+xref = [120; 50];                 % target (mm)
+xlog = zeros(2,steps);
+th1log = zeros(1,steps); th2log = zeros(1,steps);
+
+for k = 1:steps
+    % posisi aktual
+    x = [L1*cos(th1)+L2*cos(th1+th2);
+         L1*sin(th1)+L2*sin(th1+th2)];
+    % Jacobian sekarang
+    J = [ -L1*sin(th1)-L2*sin(th1+th2), -L2*sin(th1+th2);
+           L1*cos(th1)+L2*cos(th1+th2),  L2*cos(th1+th2)];
+    % error & hukum kecepatan
+    e = xref - x;
+    xdot_star = Ke*e;             % m/s setpoint sederhana
+    % Damped least-squares
+    dq = J.'/(J*J.' + (lambda^2)*eye(2)) * xdot_star;
+    % update
+    th1 = th1 + dq(1)*dt;
+    th2 = th2 + dq(2)*dt;
+    % log
+    xlog(:,k)=x; th1log(k)=th1; th2log(k)=th2;
+end
+
+figure('Color','w'); hold on; grid on; axis equal;
+plot(xlog(1,:),xlog(2,:),'b','LineWidth',1.5);
+plot(xref(1),xref(2),'rp','MarkerFaceColor','r');
+xlabel('x [mm]'); ylabel('y [mm]');
+title('(4) Lintasan EE dengan kontrol kecepatan (DLS)');
+legend({'Trajectory','Target'});
+
+%% === (5) Estimasi gaya maksimum arah vertikal ===================
+tau_max = 0.2*1000;          % N·mm (0.2 N·m)
+u = [0;1];                   % arah gaya vertikal ke atas
+F_max = min(tau_max ./ abs(J.'*u));
+fprintf('\n(5) Gaya maksimum vertikal yg masih aman (tau<=0.2Nm): %.2f N\n', F_max);
+
+%% --- Visualisasi robot akhir ------------------------------------
+xO=0; yO=0;
+x1=L1*cos(th1log(end)); y1=L1*sin(th1log(end));
+x2=x1+L2*cos(th1log(end)+th2log(end));
+y2=y1+L2*sin(th1log(end)+th2log(end));
+
+figure('Color','w'); hold on; axis equal; grid on;
+plot([xO x1 x2],[yO y1 y2],'b-o','LineWidth',2);
+plot(xref(1),xref(2),'rp','MarkerSize',10,'MarkerFaceColor','r');
+xlabel('x [mm]'); ylabel('y [mm]');
+title('Posisi akhir lengan setelah tracking');
+text(x2+10,y2,sprintf('Fmax vert=%.2f N',F_max));
