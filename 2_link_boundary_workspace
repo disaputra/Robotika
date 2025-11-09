@@ -1,0 +1,157 @@
+%% ============================
+%  TWO-LINK PLANAR WORKSPACE DEMO (no functions)
+%  - Forward Kinematics (FK)
+%  - Inverse Kinematics (IK) example (elbow-up & elbow-down)
+%  - Workspace penuh vs. dengan batas sudut
+%  - Singularity boundaries
+%  - Animasi sederhana mengikuti lintasan lingkaran
+%  Catatan: Tidak ada function; semuanya skrip.
+%% ============================
+
+clear; clc; close all;
+
+%% --- Parameter link (mm) ---
+L1 = 80;
+L2 = 90;
+
+%% --- Batas sudut mekanik (derajat) -> ubah sesuai mekanik Anda ---
+th1_min = -150;   th1_max = 150;
+th2_min =  -120;  th2_max = 120;
+
+%% --- Grid sudut untuk sampling workspace ---
+N1 = 721;                        % resolusi theta1
+N2 = 721;                        % resolusi theta2
+th1 = linspace(-pi, pi, N1);     % [rad]
+th2 = linspace(-pi, pi, N2);     % [rad]
+[T1, T2] = meshgrid(th1, th2);
+
+%% --- Forward Kinematics: semua kombinasi (workspace penuh, tanpa batas mekanik) ---
+X_full = L1*cos(T1) + L2*cos(T1+T2);
+Y_full = L1*sin(T1) + L2*sin(T1+T2);
+
+%% --- Workspace dengan batas mekanik pada theta1, theta2 ---
+%     Konversi batas derajat ke radian
+th1m = th1_min*pi/180; th1M = th1_max*pi/180;
+th2m = th2_min*pi/180; th2M = th2_max*pi/180;
+%     Ambil subset grid yang memenuhi batas
+mask1 = (T1>=th1m) & (T1<=th1M) & (T2>=th2m) & (T2<=th2M);
+X_lim  = X_full(mask1);
+Y_lim  = Y_full(mask1);
+
+%% --- Batas workspace teori (annulus) dan singularities ---
+r_max = L1 + L2;           % lengan lurus (theta2 = 0) -> singular
+r_min = abs(L1 - L2);      % lengan terlipat (theta2 = pi) -> singular
+t = linspace(-pi, pi, 1000);
+cx_out = r_max*cos(t); cy_out = r_max*sin(t);   % boundary luar (singular)
+cx_in  = r_min*cos(t); cy_in  = r_min*sin(t);   % boundary dalam (singular)
+
+%% --- Plot workspace ---
+figure('Color','w'); hold on; axis equal; grid on;
+% Workspace penuh (tanpa batas mekanik)
+plot(X_full(:), Y_full(:), '.', 'MarkerSize', 1);
+% Batas teori + singular boundaries
+plot(cx_out, cy_out, 'k-', 'LineWidth', 1.5);      % singular (theta2=0)
+plot(cx_in , cy_in , 'k-', 'LineWidth', 1.5);      % singular (theta2=pi)
+% Workspace dengan batas mekanik (warna lain)
+plot(X_lim, Y_lim, '.', 'MarkerSize', 1.5, 'Color', [0.00 0.45 0.74]); % biru muda
+
+title('Workspace 2-Link (penuh dan dengan batas sudut)');
+xlabel('x [mm]'); ylabel('y [mm]');
+legend({'Workspace (tanpa batas mekanik)', 'Boundary luar (singular)', ...
+        'Boundary dalam (singular)', 'Workspace dgn batas mekanik'}, ...
+        'Location','SouthOutside');
+
+%% --- Contoh Inverse Kinematics (IK) untuk satu target ---
+% Target yang masih dalam jangkauan (ubah sesuka hati)
+xT = 120;  yT = 50;
+plot(xT, yT, 'rp', 'MarkerSize', 12, 'MarkerFaceColor','r');
+
+% Hitung IK (dua solusi)
+r2  = xT^2 + yT^2;
+c2  = (r2 - L1^2 - L2^2)/(2*L1*L2);
+if abs(c2) > 1
+    disp('Target di luar jangkauan. Pilih target lain.'); return;
+end
+s2a =  sqrt(max(0,1-c2^2));      % elbow-down
+s2b = -sqrt(max(0,1-c2^2));      % elbow-up
+
+% Solusi A (elbow-down)
+th2A = atan2(s2a, c2);
+th1A = atan2(yT, xT) - atan2(L2*sin(th2A), L1 + L2*cos(th2A));
+% Solusi B (elbow-up)
+th2B = atan2(s2b, c2);
+th1B = atan2(yT, xT) - atan2(L2*sin(th2B), L1 + L2*cos(th2B));
+
+% Gambar konfigurasi kedua solusi
+% Titik sendi untuk A
+O  = [0;0];
+P1A = [L1*cos(th1A);              L1*sin(th1A)];
+P2A = [L1*cos(th1A)+L2*cos(th1A+th2A);  L1*sin(th1A)+L2*sin(th1A+th2A)];
+% Titik sendi untuk B
+P1B = [L1*cos(th1B);              L1*sin(th1B)];
+P2B = [L1*cos(th1B)+L2*cos(th1B+th2B);  L1*sin(th1B)+L2*sin(th1B+th2B)];
+
+plot([O(1) P1A(1) P2A(1)], [O(2) P1A(2) P2A(2)], 'g-o', 'LineWidth', 2, 'MarkerFaceColor','g');
+plot([O(1) P1B(1) P2B(1)], [O(2) P1B(2) P2B(2)], 'm-o', 'LineWidth', 2, 'MarkerFaceColor','m');
+legend({'Workspace (tanpa batas mekanik)', 'Boundary luar (singular)', ...
+        'Boundary dalam (singular)', 'Workspace dgn batas mekanik', ...
+        'Target', 'Solusi IK A (elbow-down)', 'Solusi IK B (elbow-up)'}, ...
+        'Location','SouthOutside');
+
+%% --- Indikator apakah solusi kena batas mekanik ---
+deg = 180/pi;
+th1A_deg = th1A*deg; th2A_deg = th2A*deg;
+th1B_deg = th1B*deg; th2B_deg = th2B*deg;
+disp('--- IK Solution A (elbow-down) [deg] ---');
+disp([th1A_deg, th2A_deg]);
+disp('Kena batas mekanik? ');
+disp([ (th1A_deg<th1_min)||(th1A_deg>th1_max), (th2A_deg<th2_min)||(th2A_deg>th2_max) ]);
+
+disp('--- IK Solution B (elbow-up) [deg] ---');
+disp([th1B_deg, th2B_deg]);
+disp('Kena batas mekanik? ');
+disp([ (th1B_deg<th1_min)||(th1B_deg>th1_max), (th2B_deg<th2_min)||(th2B_deg>th2_max) ]);
+
+%% --- Animasi sederhana mengikuti lintasan lingkaran di dalam workspace ---
+figure('Color','w'); hold on; axis equal; grid on;
+xlabel('x [mm]'); ylabel('y [mm]');
+title('Animasi lintasan (menghindari singular & batas)');
+% Lintasan: lingkaran radius aman (antara r_min dan r_max)
+r_traj = (r_min + r_max)/2 * 0.8;      % faktor 0.8 biar aman
+theta_traj = linspace(0, 2*pi, 360);
+for k = 1:length(theta_traj)
+    xk = r_traj*cos(theta_traj(k));
+    yk = r_traj*sin(theta_traj(k));
+
+    % IK cepat (ambil elbow-down; fallback elbow-up jika tidak valid)
+    r2  = xk^2 + yk^2;
+    c2  = (r2 - L1^2 - L2^2)/(2*L1*L2);
+    if abs(c2) > 1, continue; end
+    s2  =  sqrt(max(0,1-c2^2));
+    th2 = atan2(s2, c2);
+    th1 = atan2(yk, xk) - atan2(L2*sin(th2), L1 + L2*cos(th2));
+
+    % Cek batas mekanik; kalau melanggar, coba cabang lain
+    th1d = th1*deg; th2d = th2*deg;
+    if (th1d<th1_min)||(th1d>th1_max)||(th2d<th2_min)||(th2d>th2_max)
+        th2 = atan2(-s2, c2);
+        th1 = atan2(yk, xk) - atan2(L2*sin(th2), L1 + L2*cos(th2));
+        th1d = th1*deg; th2d = th2*deg;
+        if (th1d<th1_min)||(th1d>th1_max)||(th2d<th2_min)||(th2d>th2_max)
+            % jika tetap melanggar, skip titik ini
+            continue;
+        end
+    end
+
+    % Titik sendi untuk plot
+    P1 = [L1*cos(th1);              L1*sin(th1)];
+    P2 = [L1*cos(th1)+L2*cos(th1+th2);  L1*sin(th1)+L2*sin(th1+th2)];
+    cla;                             % bersihkan frame
+    plot(cx_out, cy_out, 'k-', 'LineWidth', 1); hold on;
+    plot(cx_in , cy_in , 'k-', 'LineWidth', 1);
+    plot(xk, yk, 'r.', 'MarkerSize', 18);
+    plot([0 P1(1) P2(1)], [0 P1(2) P2(2)], 'b-o', 'LineWidth', 2, 'MarkerFaceColor','b');
+    axis equal;
+    xlim([-r_max-20, r_max+20]); ylim([-r_max-20, r_max+20]);
+    drawnow;
+end
